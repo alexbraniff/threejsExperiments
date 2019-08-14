@@ -1,0 +1,75 @@
+<html lang="en">
+	<head>
+		<link href="style.css" rel="stylesheet" type="text/css" />
+
+		<script src="js/three.min.js"></script>
+
+		<script src="js/GLOBAL.js"></script>
+		<script src="js/GLOBAL/COLOR.js"></script>
+		<script src="js/GLOBAL/CONTEXT_MENU.js"></script>
+		<script src="js/GLOBAL/NAVIGATION.js"></script>
+		<script src="js/GLOBAL/VIEWPORT.js"></script>
+		<script src="js/GLOBAL/MOUSE_DIRECTION.js"></script>
+		<script src="js/GRID.js"></script>
+		<script src="js/GEO_CONTROL.js"></script>
+		<script src="js/KEY_LISTENER.js"></script>
+
+		<meta charset="utf-8">
+	</head>
+	<body onload="Main()">
+		<noscript>
+			You must have javascript
+		</noscript>
+		<script type="text/javascript">
+			function Main()
+			{
+				window.G = new GLOBAL();
+				var GC = new GEO_CONTROL(G);
+				//var KL = new KEY_LISTENER(G);
+
+
+
+				window.onresize = function()
+				{
+					G.windowResize();
+				};
+
+				// Do more stuff
+
+				G.VIEWPORT.init();
+				G.VIEWPORT.test();
+				var grid = new GRID(G, GC, 1200, 12);
+
+				var camInterval = setInterval(function(){G.VIEWPORT.animateCamera(G.VIEWPORT.GRID);}, 100)
+				var updateInterval = setInterval(function(){G.VIEWPORT.render();}, 25);
+
+			}
+
+			window.oncontextmenu = function()
+			{
+				return false;
+			}
+
+			window.onmousemove = function(event)
+			{
+				G.mousemove(event);
+			}
+
+			window.onmousedown = function(event)
+			{
+				G.mousedown(event);
+			}
+
+			window.onmouseup = function(event)
+			{
+				G.mouseup(event);
+			}
+
+			window.onmousewheel = function(event)
+			{
+				G.scroll(event);
+			}
+
+		</script>
+	</body>
+</html>
