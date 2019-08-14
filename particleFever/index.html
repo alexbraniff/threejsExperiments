@@ -1,0 +1,453 @@
+<html lang="en">
+	<head>
+		<link href="style.css" rel="stylesheet" type="text/css" />
+		<link href="reset.css" rel="stylesheet" type="text/css" />
+
+		<script src="js/three.min.js"></script>
+		<script src="js/OrbitControls.js"></script>
+		<script src="js/dat.gui.min.js"></script>
+
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<noscript>
+			You must have javascript
+		</noscript>
+
+		<div id="top-bar">
+
+		</div>
+		<div id="side-bar">
+
+		</div>
+		<div id="viewport">
+
+		</div>
+
+		<script type="text/javascript">
+			var top, side, vp;
+
+			var group;
+			var container;
+			var stats;
+			var particlesData = [];
+			var camera;
+			var scene;
+			var renderer;
+			var positions;
+			var colors;
+			var pointCloud;
+			var particlePositions;
+			var linesMesh;
+
+			var camDist = -2500;
+			var sDist = 0;
+
+			var sWireframe = false;
+
+			var maxParticleCount = 1500;
+			var particleCount = 1250;
+			var r = 1500;
+			var rHalf = r / 2;
+
+			var effectController = {
+				showDots: true,
+				showLines: true,
+				minDistance: 150,
+				limitConnections: false,
+				maxConnections: 25,
+				particleCount: 1500,
+				scale: 5,
+				wireframe:false,
+				extrudeAmount:800,
+				bevelThickness:5,
+				bevelSize:7,
+				bevelSegments:3,
+				bevelEnabled:true,
+				curveSegments:12,
+				steps:1,
+				asGeom:{}
+			}
+
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+
+			init();
+			animate();
+
+			function initGUI()
+			{
+				var top = document.getElementById("top-bar");
+				var topHeight = 20;
+				var side = document.getElementById("side-bar");
+				var sideWidth = 200;
+				var vp = document.getElementById("viewport");
+
+				top.style.width = width;
+				top.style.height = topHeight;
+				top.style.top = 0;
+				top.style.left = 0;
+
+				side.style.width = sideWidth;
+				side.style.height = height - parseInt(top.style.height, 10);
+				side.style.top = parseInt(top.style.height, 10);
+				side.style.left = 0;
+
+				vp.style.width = width - parseInt(side.style.width, 10);
+				vp.style.height = height - parseInt(top.style.height, 10);
+				vp.style.top = parseInt(top.style.height, 10);
+				vp.style.left = parseInt(side.style.width, 10);
+
+				var gui = new dat.GUI();
+
+				gui.add( effectController, "showDots" ).onChange( function( value ) { pointCloud.visible = value; } );
+				gui.add( effectController, "showLines" ).onChange( function( value ) { linesMesh.visible = value; } );
+				gui.add( effectController, "minDistance", 10, 300 );
+				gui.add( effectController, "limitConnections" );
+				gui.add( effectController, "maxConnections", 0, 30, 1 );
+				gui.add( effectController, "particleCount", 0, maxParticleCount, 1 ).onChange( function( value ) {
+
+					particleCount = parseInt( value );
+					particles.drawcalls[ 0 ].count = particleCount;
+
+				});
+				gui.add( effectController, "scale", 0, 10 ).onChange( effectController.asGeom );
+				gui.add( effectController, "wireframe" ).onChange( function( value ) { sWireframe = value; effectController.asGeom() } );
+		        gui.add(effectController, 'extrudeAmount', 0, 800).onChange(effectController.asGeom);
+		        gui.add(effectController, 'bevelThickness', 0, 50).onChange(effectController.asGeom);
+		        gui.add(effectController, 'bevelSize', 0, 50).onChange(effectController.asGeom);
+		        gui.add(effectController, 'bevelSegments', 0, 80).step(1).onChange(effectController.asGeom);
+
+        		effectController.asGeom();
+			}
+
+			function init()
+			{
+				scene = new THREE.Scene();
+
+				var shape = createMesh(new THREE.ShapeGeometry(drawShape()));
+
+				effectController.asGeom = function()
+				{
+					scene.remove(shape);
+
+					var options =
+					{
+						amount:effectController.extrudeAmount,
+						bevelThickness:effectController.bevelThickness,
+						bevelSize:effectController.bevelSize,
+						bevelSegments:effectController.bevelSegments,
+						bevelEnbled:effectController.bevelEnabled,
+						curveSegments:effectController.curveSegments,
+						steps:effectController.steps
+					};
+
+					shape = createMesh(new THREE.ExtrudeGeometry(drawShape(), options));
+					scene.add(shape);
+				};
+				initGUI();
+
+				container = document.getElementById("viewport");
+
+				camera = new THREE.PerspectiveCamera(45, width / height, 10, 100000);
+				camera.position.z = camDist;
+
+				controls = new THREE.OrbitControls(camera, container);
+
+
+				group = new THREE.Group();
+				scene.add(group);
+
+				//scene.add(shape);
+
+/*
+				var helper = new THREE.BoxHelper(new THREE.Mesh(new THREE.BoxGeometry(r, r, r)));
+				helper.material.color.setHex(0x080808);
+				helper.material.blending = THREE.AdditiveBlending;
+				helper.material.transparent = true;
+				group.add(helper);
+*/
+
+				var segments = maxParticleCount * maxParticleCount;
+
+				positions = new Float32Array(segments * 3);
+				colors = new Float32Array(segments * 3);
+
+				var pMaterial = new THREE.PointCloudMaterial(
+					{
+						color:0x000000,
+						size:3,
+						blending:THREE.AdditiveBlending,
+						transparent:true,
+						sizeAttentuation:false
+					}
+				);
+
+				particles = new THREE.BufferGeometry();
+				particlePositions = new Float32Array(maxParticleCount * 3);
+
+				for(var i = 0; i < maxParticleCount; i++)
+				{
+					var x = Math.random() * r - (r / 2);
+					var y = Math.random() * r - (r / 2);
+					var z = Math.random() * r - (r / 2);
+
+					particlePositions[i * 3] = x;
+					particlePositions[i * 3 + 1] = y;
+					particlePositions[i * 3 + 2] = z;
+
+					particlesData.push(
+						{
+							velocity:new THREE.Vector3(-2 + Math.random() * 4, -2 + Math.random() * 4, -2 + Math.random() * 4),
+							numConnections:0
+						}
+					);
+				}
+
+				particles.drawcalls.push(
+					{
+						start:0,
+						count:particleCount,
+						index:0
+					}
+				);
+
+				particles.addAttribute("position", new THREE.DynamicBufferAttribute(particlePositions, 3));
+
+				pointCloud = new THREE.PointCloud(particles, pMaterial);
+				group.add(pointCloud);
+
+				var geometry = new THREE.BufferGeometry();
+
+				geometry.addAttribute("position", new THREE.DynamicBufferAttribute(positions, 3));
+				geometry.addAttribute("color", new THREE.DynamicBufferAttribute(colors, 3));
+
+				geometry.computeBoundingSphere();
+
+				geometry.drawcalls.push(
+					{
+						start:0,
+						count:0,
+						index:0
+					}
+				);
+
+				var material = new THREE.LineBasicMaterial( {
+					vertexColors:THREE.VertexColors,
+					blending:THREE.AdditiveBlending,
+					transparent:true
+				});
+
+				linesMesh = new THREE.Line( geometry, material, THREE.LinePieces);
+				group.add(linesMesh);
+
+				renderer = new THREE.WebGLRenderer({antialias:true});
+				renderer.setPixelRatio(window.devicePixelRatio);
+				renderer.setSize(vpWidth(), vpHeight());
+				renderer.setClearColor(0x006647);
+
+				renderer.gammaInput = true;
+				renderer.gammaOutput = true;
+
+				container.appendChild(renderer.domElement);
+
+				window.addEventListener("resize", windowResize, false);
+			}
+
+			function createMesh(geo)
+			{
+				geo.applyMatrix(new THREE.Matrix4().makeTranslation(-20, 0, 0));
+
+				var meshMaterial = new THREE.MeshNormalMaterial(
+					{
+						color:0x006647,
+						wireframe:sWireframe,
+						transparent:false,
+						vertexColors : THREE.VertexColors
+					}
+				);
+				console.log("wireframe:" + effectController.wireframe)
+
+				var mesh = THREE.SceneUtils.createMultiMaterialObject(geo, [meshMaterial]);
+				mesh.scale.set(effectController.scale,effectController.scale,effectController.scale)
+				return mesh;
+			}
+
+			function drawShape()
+			{
+				var shape = new THREE.Shape();
+
+				shape.moveTo(300, 0); // a
+
+				shape.lineTo(300, 100); // b
+				shape.lineTo(200, 100); // c
+				shape.lineTo(200, 75); // d
+				shape.lineTo(100, 75); // e
+				shape.lineTo(100, 125); // f
+				shape.lineTo(200, 125); // g
+				shape.lineTo(235, 125); // h
+				shape.bezierCurveTo(275, 125, 300, 150, 300, 175); // i
+				shape.lineTo(300, 225); // j
+				shape.bezierCurveTo(300, 265, 275, 300, 235, 300); // k
+				shape.lineTo(0, 300); // l
+				shape.lineTo(0, 200); // m
+				shape.lineTo(100, 200); // n
+				shape.lineTo(100, 225); // o
+				shape.lineTo(200, 225); // p
+				shape.lineTo(200, 175); // q
+				shape.lineTo(100, 175); // r
+				shape.lineTo(65, 175); // s
+				shape.bezierCurveTo(25, 175, 0, 165, 0, 125); // t
+				shape.lineTo(0, 75); // u
+				shape.bezierCurveTo(0, 35, 25, 0, 65, 0); // v
+
+				return shape;
+			}
+
+			function animate()
+			{
+				var vertexpos = 0;
+				var colorpos = 0;
+				var numConnected = 0;
+
+				for (var i = 0; i < particleCount; i++)
+					particlesData[i].numConnections = 0
+				for (var i = 0; i < particleCount; i++) {
+
+					var particleData = particlesData[i];
+
+					particlePositions[i*3] += particleData.velocity.x;
+					particlePositions[i*3+1] += particleData.velocity.y;
+					particlePositions[i*3+2] += particleData.velocity.z;
+
+					if ( particlePositions[i*3] < -rHalf || particlePositions[i*3] > rHalf)
+						particleData.velocity.x = -particleData.velocity.x;
+					if ( particlePositions[i*3+1] < -rHalf || particlePositions[i*3+1] > rHalf)
+						particleData.velocity.y = -particleData.velocity.y;
+					if ( particlePositions[i*3+2] < -rHalf || particlePositions[i*3+2] > rHalf)
+						particleData.velocity.z = -particleData.velocity.z;
+
+					if (effectController.limitConnections && particleData.numConnections >= effectController.maxConnections)
+						continue;
+
+					for (var j=i+1; j<particleCount;j++) {
+						var particleDataCompare = particlesData[j];
+						if (effectController.limitConnections && particleDataCompare.numConnections >= effectController.maxConnections)
+							continue;
+
+						var dx = particlePositions[i*3]-particlePositions[j*3];
+						var dy = particlePositions[i*3+1]-particlePositions[j*3+1];
+						var dz = particlePositions[i*3+2]-particlePositions[j*3+2];
+						var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+						if (dist < effectController.minDistance) {
+
+							particleData.numConnections++;
+							particleDataCompare.numConnections++;
+
+							var alpha = 1.0 - dist / effectController.minDistance;
+
+							positions[ vertexpos++ ] = particlePositions[i*3];
+							positions[ vertexpos++ ] = particlePositions[i*3+1];
+							positions[ vertexpos++ ] = particlePositions[i*3+2];
+							positions[ vertexpos++ ] = particlePositions[j*3];
+							positions[ vertexpos++ ] = particlePositions[j*3+1];
+							positions[ vertexpos++ ] = particlePositions[j*3+2];
+
+							colors[ colorpos++ ] = alpha;
+							colors[ colorpos++ ] = alpha;
+							colors[ colorpos++ ] = alpha;
+							colors[ colorpos++ ] = alpha;
+							colors[ colorpos++ ] = alpha;
+							colors[ colorpos++ ] = alpha;
+
+							numConnected++;
+						}
+					}
+				}
+
+				linesMesh.geometry.drawcalls[0].count = numConnected *2;
+				linesMesh.geometry.attributes.position.needsUpdate = true;
+				linesMesh.geometry.attributes.color.needsUpdate = true;
+
+				pointCloud.geometry.attributes.position.needsUpdate = true;
+
+				requestAnimationFrame(animate);
+
+				render();
+			}
+
+			function render()
+			{
+				var time = Date.now() * 0.001;
+				//group.rotation.y = time * (3 * Math.PI / 16);
+				renderer.render(scene, camera);
+			}
+
+			function vpWidth()
+			{
+				var vp = document.getElementById("viewport");
+				return (parseInt(vp.style.width, 10));
+			}
+
+			function vpHeight()
+			{
+				var vp = document.getElementById("viewport");
+				return (parseInt(vp.style.height, 10));
+			}
+
+			function vpSetWidth(w)
+			{
+				console.log("set wdth: " + w);
+				var vp = document.getElementById("viewport");
+				vp.style.width = w;
+			}
+
+			function vpSetHeight(h)
+			{
+				console.log("set hight: " + h);
+				var vp = document.getElementById("viewport");
+				vp.style.height = h;
+			}
+
+			function windowResize()
+			{
+				camera.aspect = width/height;
+				camera.updateProjectionMatrix();
+				width = window.innerWidth;
+				height = window.innerHeight;
+				vpSetWidth(width);
+				vpSetHeight(height);
+				console.log('doin it')
+				renderer.setSize(vpWidth(), vpHeight());
+			}
+
+			window.oncontextmenu = function()
+			{
+				// Prevent context menu opening
+				return false;
+			}
+
+			window.onmousemove = function(event)
+			{
+				// Capture mouse move
+			}
+
+			window.onmousedown = function(event)
+			{
+				// Capture mouse down
+			}
+
+			window.onmouseup = function(event)
+			{
+				// Capture mouse up
+			}
+
+			window.onmousewheel = function(event)
+			{
+				// Capture mouse wheel
+			}
+
+		</script>
+	</body>
+</html>

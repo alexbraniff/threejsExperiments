@@ -1,0 +1,17 @@
+#top-bar
+{
+	background:#567834;
+	position:absolute;
+}
+
+#side-bar
+{
+	background:#785634;
+	position:absolute;
+}
+
+#viewport
+{
+	background:red;
+	position:absolute;
+}
